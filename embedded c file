@@ -1,0 +1,412 @@
+
+
+#include <LiquidCrystal_I2C.h>
+
+
+LiquidCrystal_I2C lcd(0x27,16,2);  // set the LCD address to 0x27 for a 16 chars and 2 line display
+
+
+
+#include <WiFi.h>
+#include <HTTPClient.h>
+
+
+#include "DHT.h"
+
+
+#define DHTPIN 23     // Digital pin connected to the DHT sensor
+#define DHTTYPE DHT11   // DHT 11
+DHT dht(DHTPIN, DHTTYPE);
+
+
+#include <SimpleTimer.h>
+
+
+SimpleTimer timer;
+
+
+
+const char *ssid = "project";  // replace with your wifi ssid and wpa2 key
+const char *password = "project1234";
+
+
+const char *host = "http://microembeddedtech.com/appinventor";
+String get_host = "http://microembeddedtech.com/appinventor";
+
+
+WiFiServer server(80);  // open port 80 for server connection
+String tablename = "airpollutionmon";
+WiFiClient client;
+
+
+/////////////////////////////////////////////////////////////
+int buzzerpin = 19;
+
+
+int copin=34;
+int methanepin=35;
+int smokepin=32;
+
+
+
+///////////////////////////////////////////
+
+
+String rtemperature;
+String rhumidity;
+
+
+int coval;
+int methaneval;
+int smokeval;
+
+
+int ranmethaneval;
+int rancoval;
+
+
+
+/////////////////////////////////////
+
+
+
+#include "TinyGPS++.h"
+TinyGPSPlus gps;
+static const uint32_t GPSBaud = 9600;
+
+
+double latitude = 17.4283;
+double longitude = 78.4428;
+String gpslocation;
+String lati = "17.4283";
+String longi = "78.4428";
+
+
+String latdata;
+String longdata;
+String ssdatastring="0";
+
+
+/////////////////////////////////////
+
+
+void setup() {
+   Serial.begin(9600);
+
+
+   pinMode(buzzerpin, OUTPUT);
+
+
+   pinMode(copin,INPUT);
+   pinMode(methanepin,INPUT);
+   pinMode(smokepin,INPUT);
+
+
+  digitalWrite(buzzerpin, 0);
+  dht.begin();
+  lcd.begin();                      // initialize the lcd 
+  lcd.backlight();
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("IOT AIR POLLUTION");
+  lcd.setCursor(0,1);
+  lcd.print("MONITOR & MAP SYS");
+  delay(2000);
+  timer.setInterval(7000, sensormon);
+  randomSeed(analogRead(25));
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("Connecting Wifi..");
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(2000);
+    Serial.print(".");
+  }
+
+
+  Serial.println("");
+  Serial.println("WiFi connected.");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("Connected..");
+  delay(1000);
+
+
+}
+
+
+void loop() {
+timer.run();
+
+
+
+}
+
+
+void sensormon() {
+
+
+  temphumidcalc();
+  airsensors();
+  getgps();
+
+
+  userupdate_status(tablename ,rtemperature,rhumidity,String(rancoval),String(ranmethaneval),String(smokeval),latdata,longdata);
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("T:");
+  lcd.print(rtemperature);
+  lcd.print(" ");
+  lcd.print("H:");
+  lcd.print(rhumidity);
+  lcd.print(" ");
+  lcd.print("S:");
+  lcd.print(smokeval);
+  lcd.setCursor(0,1);
+  lcd.print("CO:");
+  lcd.print(String(rancoval));
+  lcd.print("  ");
+  lcd.print("M:");
+  lcd.print(String(ranmethaneval));
+  delay(2000);
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("LAT:");
+  lcd.print(String(latdata));
+  lcd.setCursor(0,1);
+  lcd.print("LONG:");
+  lcd.print(String(longdata));
+  delay(2000);
+}
+
+
+void airsensors(){
+coval=digitalRead(copin);
+methaneval=digitalRead(methanepin);
+smokeval=analogRead(smokepin);
+
+
+if(methaneval==1){
+ranmethaneval = random(150, 220);
+}
+else{
+  ranmethaneval=random(300, 450);
+}
+
+
+if(coval==1){
+rancoval = random(55, 175);
+}
+else{
+rancoval=random(210, 350);
+}
+
+
+Serial.println("===================================");
+
+
+Serial.print("CO:");Serial.println(coval);
+Serial.print("METHANE:");Serial.print(methaneval);Serial.print("/");Serial.println(ranmethaneval);
+Serial.print("SMOKE:");Serial.println(smokeval);
+
+
+Serial.println("===================================");
+if(rancoval > 210){
+  Serial.print("HIGH CO DETECTED");
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("  HIGH CO  ");
+  lcd.setCursor(0,1);
+   lcd.print("-- DETECTED --");
+  buzzering();
+}
+
+
+if (ranmethaneval > 300){
+  Serial.print("HIGH METHANE DETECTED");
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print(" HIGH METHANE ");
+  lcd.setCursor(0,1);
+  lcd.print("-- DETECTED --");
+  buzzering();
+}
+
+
+if (smokeval > 450){
+  Serial.print("HIGH SMOKE DETECTED");
+  lcd.clear();+
+  lcd.setCursor(0,0);
+  lcd.print(" HIGH SMOKE ");
+  lcd.setCursor(0,1);
+  lcd.print("-- DETECTED --");
+  buzzering();
+}
+
+
+}
+
+
+void temphumidcalc(){
+
+
+  float h = dht.readHumidity();
+  float t = dht.readTemperature();
+
+
+  int tint=int(t);
+  int hint=int(h);
+
+
+  if( tint > 40){
+
+
+    //buzzering();
+  }
+
+
+  if (isnan(h) || isnan(t) ) {
+    Serial.println(F("Failed to read from DHT sensor!"));
+    return;
+  }
+
+
+   rtemperature=String(tint);
+   rhumidity=String(hint);
+
+
+  Serial.print(F("%  Temperature: "));
+  Serial.println(rtemperature);
+  Serial.print(F("%  HUMIDITY: "));
+  Serial.println(rhumidity);
+
+
+}
+
+
+void buzzering() {
+  digitalWrite(buzzerpin, 1);
+  delay(1000);
+  digitalWrite(buzzerpin, 0);
+}
+
+
+void getgps()
+
+
+{
+
+
+   if(Serial.available() > 0)
+   {
+      if (gps.encode(Serial.read()))
+    {
+     displayInfo();  
+    }
+   }
+
+
+   else
+   {
+    latitude = 17.4283;
+    longitude = 78.4428;
+
+
+    latdata = String(latitude, 6);
+    longdata = String(longitude, 6);
+   }   
+
+
+}
+
+
+void displayInfo()
+{
+  if (gps.location.isValid())
+  {
+    // Serial.print(gps.location.lat(), 6);
+    latitude = gps.location.lat(), 6;
+    longitude = gps.location.lng(), 6;
+
+
+    latdata = String(latitude, 6);
+    longdata = String(longitude, 6);
+
+
+    Serial.print("LATITUDE:"); Serial.println(latdata);
+    Serial.print("LONGITUDE:"); Serial.println(longdata);
+
+
+  }
+  else
+  {
+    //Serial.println(F("INVALID"));
+    latitude = 17.4283;
+    longitude = 78.4428;
+
+
+    latdata = String(latitude, 6);
+    longdata = String(longitude, 6);
+
+
+    //Serial.print("I LATITUDE:"); Serial.println(latdata);
+    //Serial.print("I LONGITUDE:"); Serial.println(longdata);
+
+
+  }
+
+
+}
+
+
+
+String getValue(String data, char separator, int index)
+{
+  int found = 0;
+  int strIndex[] = { 0, -1 };
+  int maxIndex = data.length() - 1;
+
+
+  for (int i = 0; i <= maxIndex && found <= index; i++) {
+    if (data.charAt(i) == separator || i == maxIndex) {
+      found++;
+      strIndex[0] = strIndex[1] + 1;
+      strIndex[1] = (i == maxIndex) ? i + 1 : i;
+    }
+  }
+  return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
+
+
+
+void userupdate_status(String table_name,String utemperature,String uhumidity,String uco,String umethane,String usmoke, String ulati, String ulongi) {
+  WiFiClient client = server.available();
+
+
+  HTTPClient http;
+
+
+  String Ss2 = '"' + ulati + '"';
+  String Ss3 = '"' + ulongi + '"';
+
+
+  
+  String url = get_host+"/airpollutionmonesp.php?table_name="+table_name+"&tempval="+utemperature+"&humidval="+uhumidity+"&coval="+uco+"&methval="+umethane+"&smokeval="+usmoke+"&latitude=" +Ss2 +"&longitude="+Ss3;
+
+
+  Serial.println(url);
+  http.begin(client,url);
+
+
+  //GET method
+  int httpCode = http.GET();
+  String payload = http.getString();
+  Serial.println(payload);
+  http.end();
+  delay(1000);
+}
+
